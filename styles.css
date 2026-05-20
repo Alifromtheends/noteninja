@@ -36,12 +36,22 @@ body {
   padding: 40px 0 30px;
 }
 
+.header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.header-actions {
+  position: relative;
+}
+
 .brand {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 14px;
-  margin-bottom: 8px;
 }
 
 .logo {
@@ -129,7 +139,7 @@ body {
   display: flex;
   gap: 12px;
   justify-content: center;
-  margin-bottom: 16px;
+  margin-bottom: 10px;
 }
 
 .btn-record {
@@ -160,6 +170,21 @@ body {
 
 .record-icon {
   font-size: 20px;
+}
+
+.speech-status {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  min-height: 18px;
+}
+
+.speech-status.supported {
+  color: var(--success);
+}
+
+.speech-status.unsupported {
+  color: var(--warning);
 }
 
 .recorder-hint {
@@ -277,6 +302,39 @@ textarea::placeholder {
   font-size: 13px;
 }
 
+/* ─── Filter Bar ─── */
+.filter-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.filter-btn {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.filter-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.filter-btn.active {
+  background: linear-gradient(135deg, var(--primary), var(--primary-light));
+  color: white;
+  border-color: transparent;
+}
+
 /* ─── Action Items ─── */
 .action-list {
   display: flex;
@@ -329,6 +387,43 @@ textarea::placeholder {
   color: var(--text-secondary);
 }
 
+.action-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.confidence-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.confidence-high {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.confidence-medium {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.confidence-low {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
 .action-assignee {
   font-size: 12px;
   color: var(--primary-light);
@@ -363,6 +458,74 @@ textarea::placeholder {
   flex-wrap: wrap;
 }
 
+/* ─── History Dropdown ─── */
+.history-dropdown-wrapper {
+  position: relative;
+}
+
+.history-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 280px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  z-index: 100;
+  display: none;
+  padding: 8px 0;
+}
+
+.history-dropdown.open {
+  display: block;
+}
+
+.history-header {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+
+.history-item {
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.history-item:hover {
+  background: var(--surface-hover);
+}
+
+.history-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-meta {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.history-empty {
+  padding: 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
 /* ─── Empty State ─── */
 .empty-state {
   text-align: center;
@@ -386,4 +549,6 @@ textarea::placeholder {
   .btn-record { width: 100%; justify-content: center; }
   .export-buttons { flex-direction: column; }
   .export-buttons button { width: 100%; }
+  .history-dropdown { right: -40px; width: 260px; }
+  .header-top { flex-direction: column; gap: 12px; }
 }

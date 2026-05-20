@@ -10,9 +10,22 @@
 <body>
   <div class="app">
     <header class="header">
-      <div class="brand">
-        <div class="logo">🎙️</div>
-        <h1>NoteNinja</h1>
+      <div class="header-top">
+        <div class="brand">
+          <div class="logo">🎙️</div>
+          <h1>NoteNinja</h1>
+        </div>
+        <div class="header-actions">
+          <div class="history-dropdown-wrapper">
+            <button class="btn-ghost" onclick="toggleHistoryDropdown()">📚 History</button>
+            <div class="history-dropdown" id="history-dropdown">
+              <div class="history-header">Recent Meetings</div>
+              <div id="history-list">
+                <div class="history-empty">No saved meetings yet</div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
       <p class="tagline">Voice-to-text meeting notes with AI action item extraction</p>
     </header>
@@ -41,6 +54,7 @@
             </button>
           </div>
           
+          <div id="speech-status" class="speech-status"></div>
           <p class="recorder-hint">Or paste transcript below ↓</p>
         </div>
       </section>
@@ -52,9 +66,7 @@
             <h3>📝 Transcript</h3>
             <button class="btn-small" onclick="clearTranscript()">Clear</button>
           </div>
-          <textarea id="transcript" placeholder="Paste your meeting transcript here, or click 'Load Demo' to see it in action...
-
-Example: 'Hey team, we need to finish the API by Friday. Sarah will handle the design mockups. Mike, can you review the PR by tomorrow? Let's sync again next Monday at 10am.'"></textarea>
+          <textarea id="transcript" placeholder="Paste your meeting transcript here, or click 'Load Demo' to see it in action...&#10;&#10;Example: 'Hey team, we need to finish the API by Friday. Sarah will handle the design mockups. Mike, can you review the PR by tomorrow? Let's sync again next Monday at 10am.'"></textarea>
           <div class="panel-actions">
             <button class="btn-primary" onclick="extractActions()">
               ✨ Extract Action Items
@@ -69,6 +81,13 @@ Example: 'Hey team, we need to finish the API by Friday. Sarah will handle the d
           <div class="panel-header">
             <h3>⚡ Action Items</h3>
             <span class="badge" id="action-count">0 found</span>
+          </div>
+          <div class="filter-bar" id="filter-bar">
+            <button class="filter-btn active" data-filter="all" onclick="setActionFilter('all')">All</button>
+            <button class="filter-btn" data-filter="assignee" onclick="setActionFilter('assignee')">By Assignee</button>
+            <button class="filter-btn" data-filter="deadline" onclick="setActionFilter('deadline')">By Deadline</button>
+            <button class="filter-btn" data-filter="completed" onclick="setActionFilter('completed')">Completed</button>
+            <button class="filter-btn" data-filter="pending" onclick="setActionFilter('pending')">Pending</button>
           </div>
           <div id="action-list" class="action-list">
             <div class="empty-state">Extract action items to see them here</div>
@@ -95,6 +114,7 @@ Example: 'Hey team, we need to finish the API by Friday. Sarah will handle the d
             <button class="btn-ghost" onclick="exportMarkdown()">📝 Markdown</button>
             <button class="btn-ghost" onclick="exportJSON()">📋 JSON</button>
             <button class="btn-ghost" onclick="copyToClipboard()">📋 Copy Text</button>
+            <button class="btn-ghost" onclick="shareEmail()">📧 Share Email</button>
           </div>
         </div>
       </section>

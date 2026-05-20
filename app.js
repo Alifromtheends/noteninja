@@ -2,6 +2,20 @@
  * NoteNinja — Voice-to-Text Meeting Notes with AI Action Item Extraction
  */
 
+// ─── State ───
+let isRecording = false;
+let recordingTimer = null;
+let recordingSeconds = 0;
+let recognition = null;
+let currentActions = [];
+let currentSummary = null;
+let currentTranscript = '';
+let actionFilter = 'all';
+
+// ─── Speech API Detection ───
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const speechSupported = !!SpeechRecognition;
+
 // ─── Toast Notification ───
 function showToast(message, type = 'success') {
   const existing = document.querySelector('.noteninja-toast');
@@ -29,19 +43,68 @@ function showToast(message, type = 'success') {
   }, 3000);
 }
 
-let isRecording = false;
-let recordingTimer = null;
-let recordingSeconds = 0;
+// ─── Speech Recognition ───
+function initSpeechRecognition() {
+  if (!speechSupported) return;
+  
+  recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+  
+  recognition.onresult = (event) => {
+    let finalTranscript = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalTranscript += transcript + ' ';
+      }
+    }
+    if (finalTranscript) {
+      const textarea = document.getElementById('transcript');
+      textarea.value += finalTranscript;
+    }
+  };
+  
+  recognition.onerror = (event) => {
+    console.error('Speech recognition error', event.error);
+    if (event.error !== 'no-speech' && event.error !== 'aborted') {
+      showToast('Speech error: ' + event.error, 'error');
+    }
+  };
+  
+  recognition.onend = () => {
+    if (isRecording && recognition) {
+      try { recognition.start(); } catch (e) {}
+    }
+  };
+}
 
-// ─── Recording Simulation ───
+function updateSpeechStatus() {
+  const statusEl = document.getElementById('speech-status');
+  if (!statusEl) return;
+  if (speechSupported) {
+    statusEl.textContent = '✅ Speech recognition ready';
+    statusEl.className = 'speech-status supported';
+  } else {
+    statusEl.textContent = '⚠️ Speech API not supported — use Load Demo';
+    statusEl.className = 'speech-status unsupported';
+  }
+}
+
+// ─── Recording ───
 function toggleRecording() {
+  if (!speechSupported) {
+    showToast('Speech recognition not supported in this browser. Use Load Demo instead.', 'warning');
+    return;
+  }
+
   const btn = document.getElementById('record-btn');
   const text = document.getElementById('record-text');
   const icon = document.querySelector('.record-icon');
   const waveform = document.getElementById('waveform');
 
   if (!isRecording) {
-    // Start
     isRecording = true;
     btn.classList.add('recording');
     text.textContent = 'Stop Recording';
@@ -55,22 +118,38 @@ function toggleRecording() {
       updateTimer();
     }, 1000);
     
-    // Simulate transcript after 3 seconds
-    setTimeout(() => {
-      if (isRecording) {
-        loadDemo();
-      }
-    }, 3000);
-    
+    try {
+      recognition.start();
+      showToast('🎙️ Recording started — speak now!');
+    } catch (e) {
+      showToast('Could not start recording', 'error');
+      stopRecordingUI();
+    }
   } else {
-    // Stop
-    isRecording = false;
-    btn.classList.remove('recording');
-    text.textContent = 'Start Recording';
-    icon.textContent = '🔴';
-    waveform.classList.remove('recording');
-    clearInterval(recordingTimer);
+    stopRecordingUI();
+    if (recognition) {
+      try { recognition.stop(); } catch (e) {}
+    }
+    showToast('🛑 Recording stopped');
+    
+    if (document.getElementById('transcript').value.trim()) {
+      setTimeout(() => extractActions(), 300);
+    }
   }
+}
+
+function stopRecordingUI() {
+  isRecording = false;
+  const btn = document.getElementById('record-btn');
+  const text = document.getElementById('record-text');
+  const icon = document.querySelector('.record-icon');
+  const waveform = document.getElementById('waveform');
+  
+  btn.classList.remove('recording');
+  text.textContent = 'Start Recording';
+  icon.textContent = '🔴';
+  waveform.classList.remove('recording');
+  clearInterval(recordingTimer);
 }
 
 function updateTimer() {
@@ -106,6 +185,9 @@ function clearTranscript() {
   document.getElementById('action-count').textContent = '0 found';
   document.getElementById('results-section').style.display = 'none';
   document.getElementById('export-section').style.display = 'none';
+  currentActions = [];
+  currentSummary = null;
+  currentTranscript = '';
 }
 
 // ─── AI Action Extraction ───
@@ -116,15 +198,21 @@ function extractActions() {
     return;
   }
 
+  currentTranscript = text;
   const actions = extractActionItems(text);
   const summary = generateSummary(text, actions);
   
-  renderActions(actions);
+  currentActions = actions;
+  currentSummary = summary;
+  
+  setActionFilter('all');
   renderSummary(summary);
   
   document.getElementById('results-section').style.display = 'block';
   document.getElementById('export-section').style.display = 'block';
   document.getElementById('action-count').textContent = `${actions.length} found`;
+  
+  saveMeeting(text, actions, summary);
 }
 
 function extractActionItems(text) {
@@ -153,13 +241,10 @@ function extractActionItems(text) {
         
         if (actionText.length < 15 || actionText.length > 200) continue;
         
-        // Extract assignee
         const assignee = extractAssignee(sentence);
-        
-        // Extract deadline
         const deadline = extractDeadline(sentence);
+        const confidence = computeConfidence(pattern.type, assignee, deadline, false);
         
-        // Check for duplicates
         const isDup = actions.some(a => 
           a.text.toLowerCase().includes(actionText.toLowerCase().slice(0, 20)) ||
           actionText.toLowerCase().includes(a.text.toLowerCase().slice(0, 20))
@@ -172,7 +257,8 @@ function extractActionItems(text) {
             deadline,
             type: pattern.type,
             done: false,
-            id: Date.now() + Math.random().toString(36).slice(2)
+            id: Date.now() + Math.random().toString(36).slice(2),
+            confidence
           });
           matched = true;
           break;
@@ -180,13 +266,13 @@ function extractActionItems(text) {
       }
     }
     
-    // Fallback: look for names + verbs
     if (!matched) {
       const nameVerbMatch = sentence.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b.*\b(will|should|needs? to|is going to|has to)\b\s+(.+)/i);
       if (nameVerbMatch) {
         const assignee = nameVerbMatch[1];
         const actionText = sentence.replace(/^\b(Alright|So|Okay|Well|Now|Then|Also)\b\s*/i, '').trim();
         const deadline = extractDeadline(sentence);
+        const confidence = computeConfidence('assignment', assignee, deadline, true);
         
         const isDup = actions.some(a => a.text.toLowerCase().includes(actionText.toLowerCase().slice(0, 20)));
         if (!isDup && actionText.length > 15 && actionText.length < 200) {
@@ -196,14 +282,36 @@ function extractActionItems(text) {
             deadline,
             type: 'assignment',
             done: false,
-            id: Date.now() + Math.random().toString(36).slice(2)
+            id: Date.now() + Math.random().toString(36).slice(2),
+            confidence
           });
         }
       }
     }
   }
   
-  return actions.slice(0, 10); // Cap at 10
+  return actions.slice(0, 10);
+}
+
+function computeConfidence(patternType, assignee, deadline, isFallback) {
+  if (isFallback) {
+    return (assignee && deadline) ? 'medium' : 'low';
+  }
+  
+  const strongPatterns = ['request', 'directive', 'assignment'];
+  const mediumPatterns = ['need', 'schedule', 'review', 'task'];
+  
+  let score = 0;
+  if (strongPatterns.includes(patternType)) score += 0.5;
+  else if (mediumPatterns.includes(patternType)) score += 0.3;
+  else score += 0.2;
+  
+  if (assignee) score += 0.25;
+  if (deadline) score += 0.25;
+  
+  if (score >= 0.75) return 'high';
+  if (score >= 0.5) return 'medium';
+  return 'low';
 }
 
 function extractAssignee(sentence) {
@@ -260,19 +368,28 @@ function extractTopics(text) {
 }
 
 // ─── Rendering ───
-function renderActions(actions) {
+function renderActions(actions, filter = 'all') {
   const container = document.getElementById('action-list');
   
-  if (actions.length === 0) {
-    container.innerHTML = '<div class="empty-state">No action items found. Try a longer transcript.</div>';
+  let filtered = [...actions];
+  if (filter === 'completed') filtered = actions.filter(a => a.done);
+  else if (filter === 'pending') filtered = actions.filter(a => !a.done);
+  else if (filter === 'assignee') filtered = actions.filter(a => a.assignee).sort((a, b) => (a.assignee || '').localeCompare(b.assignee || ''));
+  else if (filter === 'deadline') filtered = actions.filter(a => a.deadline).sort((a, b) => (a.deadline || '').localeCompare(b.deadline || ''));
+  
+  if (filtered.length === 0) {
+    container.innerHTML = '<div class="empty-state">No action items match this filter.</div>';
     return;
   }
   
-  container.innerHTML = actions.map(action => `
+  container.innerHTML = filtered.map(action => `
     <div class="action-item" data-id="${action.id}">
       <div class="action-checkbox ${action.done ? 'checked' : ''}" onclick="toggleAction('${action.id}')"></div>
       <div class="action-text ${action.done ? 'done' : ''}">
-        ${escapeHtml(action.text)}
+        <div class="action-row">
+          <span>${escapeHtml(action.text)}</span>
+          ${action.confidence ? `<span class="confidence-badge confidence-${action.confidence}">${action.confidence}</span>` : ''}
+        </div>
         ${action.assignee ? `<div class="action-assignee">👤 ${escapeHtml(action.assignee)}</div>` : ''}
         ${action.deadline ? `<div class="action-deadline">⏰ ${escapeHtml(action.deadline)}</div>` : ''}
       </div>
@@ -313,6 +430,26 @@ function toggleAction(id) {
   
   checkbox.classList.toggle('checked');
   text.classList.toggle('done');
+  
+  const action = currentActions.find(a => a.id === id);
+  if (action) {
+    action.done = !action.done;
+    const meetings = JSON.parse(localStorage.getItem('noteninja-meetings') || '[]');
+    const meeting = meetings.find(m => m.actions.some(a => a.id === id));
+    if (meeting) {
+      const histAction = meeting.actions.find(a => a.id === id);
+      if (histAction) histAction.done = action.done;
+      localStorage.setItem('noteninja-meetings', JSON.stringify(meetings));
+    }
+  }
+}
+
+function setActionFilter(filter) {
+  actionFilter = filter;
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.filter === filter);
+  });
+  renderActions(currentActions, filter);
 }
 
 function escapeHtml(text) {
@@ -321,15 +458,85 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// ─── Meeting History ───
+function saveMeeting(transcript, actions, summary) {
+  const meetings = JSON.parse(localStorage.getItem('noteninja-meetings') || '[]');
+  const meeting = {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2),
+    date: new Date().toISOString(),
+    title: generateMeetingTitle(transcript),
+    transcript,
+    actions: JSON.parse(JSON.stringify(actions)),
+    summary
+  };
+  meetings.unshift(meeting);
+  if (meetings.length > 50) meetings.pop();
+  localStorage.setItem('noteninja-meetings', JSON.stringify(meetings));
+  renderHistory();
+}
+
+function generateMeetingTitle(transcript) {
+  const firstLine = transcript.split('\n')[0].trim();
+  if (firstLine.length > 5 && firstLine.length < 60) return firstLine;
+  const date = new Date();
+  return `Meeting — ${date.toLocaleDateString()} ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+}
+
+function renderHistory() {
+  const container = document.getElementById('history-list');
+  if (!container) return;
+  const meetings = JSON.parse(localStorage.getItem('noteninja-meetings') || '[]');
+  
+  if (meetings.length === 0) {
+    container.innerHTML = '<div class="history-empty">No saved meetings yet</div>';
+    return;
+  }
+  
+  container.innerHTML = meetings.map(m => `
+    <div class="history-item" onclick="loadMeeting('${m.id}')">
+      <div class="history-title">${escapeHtml(m.title)}</div>
+      <div class="history-meta">${new Date(m.date).toLocaleDateString()} • ${m.actions.length} actions</div>
+    </div>
+  `).join('');
+}
+
+function toggleHistoryDropdown() {
+  const dropdown = document.getElementById('history-dropdown');
+  if (dropdown) dropdown.classList.toggle('open');
+}
+
+function loadMeeting(id) {
+  const meetings = JSON.parse(localStorage.getItem('noteninja-meetings') || '[]');
+  const meeting = meetings.find(m => m.id === id);
+  if (!meeting) return;
+  
+  document.getElementById('transcript').value = meeting.transcript;
+  currentActions = meeting.actions.map(a => ({...a}));
+  currentSummary = meeting.summary;
+  currentTranscript = meeting.transcript;
+  
+  setActionFilter('all');
+  renderSummary(meeting.summary);
+  
+  document.getElementById('results-section').style.display = 'block';
+  document.getElementById('export-section').style.display = 'block';
+  document.getElementById('action-count').textContent = `${meeting.actions.length} found`;
+  
+  showToast('📂 Meeting loaded from history');
+  
+  const dropdown = document.getElementById('history-dropdown');
+  if (dropdown) dropdown.classList.remove('open');
+}
+
 // ─── Export ───
 function exportMarkdown() {
-  const transcript = document.getElementById('transcript').value;
-  const actions = Array.from(document.querySelectorAll('.action-item')).map(item => ({
-    text: item.querySelector('.action-text').childNodes[0].textContent.trim(),
-    assignee: item.querySelector('.action-assignee')?.textContent.replace('👤 ', '') || '',
-    deadline: item.querySelector('.action-deadline')?.textContent.replace('⏰ ', '') || '',
-    done: item.querySelector('.action-checkbox').classList.contains('checked')
-  }));
+  const transcript = currentTranscript || document.getElementById('transcript').value;
+  const actions = currentActions;
+  
+  if (!transcript.trim()) {
+    showToast('Nothing to export!', 'error');
+    return;
+  }
   
   const md = `# Meeting Notes\n\n## Transcript\n\n${transcript}\n\n## Action Items\n\n${actions.map(a => `- [${a.done ? 'x' : ' '}] ${a.text}${a.assignee ? ` — @${a.assignee}` : ''}${a.deadline ? ` *(by ${a.deadline})*` : ''}`).join('\n')}\n\n---\n_Extracted by NoteNinja 🥷_`;
   
@@ -338,13 +545,8 @@ function exportMarkdown() {
 
 function exportJSON() {
   const data = {
-    transcript: document.getElementById('transcript').value,
-    actions: Array.from(document.querySelectorAll('.action-item')).map(item => ({
-      text: item.querySelector('.action-text').childNodes[0].textContent.trim(),
-      assignee: item.querySelector('.action-assignee')?.textContent.replace('👤 ', '') || null,
-      deadline: item.querySelector('.action-deadline')?.textContent.replace('⏰ ', '') || null,
-      done: item.querySelector('.action-checkbox').classList.contains('checked')
-    })),
+    transcript: currentTranscript || document.getElementById('transcript').value,
+    actions: currentActions.map(a => ({...a})),
     extractedAt: new Date().toISOString()
   };
   
@@ -352,21 +554,47 @@ function exportJSON() {
 }
 
 function copyToClipboard() {
-  const text = document.getElementById('transcript').value;
-  const actions = Array.from(document.querySelectorAll('.action-item')).map(item => {
-    const textEl = item.querySelector('.action-text');
-    const mainText = textEl.childNodes[0].textContent.trim();
-    const assignee = textEl.querySelector('.action-assignee')?.textContent.replace('👤 ', '') || '';
-    const deadline = textEl.querySelector('.action-deadline')?.textContent.replace('⏰ ', '') || '';
-    const done = item.querySelector('.action-checkbox').classList.contains('checked');
-    return `[${done ? '✓' : ' '}] ${mainText}${assignee ? ` (${assignee})` : ''}${deadline ? ` — ${deadline}` : ''}`;
+  const text = currentTranscript || document.getElementById('transcript').value;
+  const actions = currentActions;
+  
+  const actionText = actions.map(a => {
+    return `[${a.done ? '✓' : ' '}] ${a.text}${a.assignee ? ` (${a.assignee})` : ''}${a.deadline ? ` — ${a.deadline}` : ''}`;
   }).join('\n');
   
-  const full = `Meeting Notes\n\n${text}\n\nAction Items:\n${actions}`;
+  const full = `Meeting Notes\n\n${text}\n\nAction Items:\n${actionText}`;
   
   navigator.clipboard.writeText(full).then(() => {
     showToast('📋 Copied to clipboard!');
   });
+}
+
+function shareEmail() {
+  const transcript = currentTranscript || document.getElementById('transcript').value;
+  const actions = currentActions;
+  const summary = currentSummary;
+  
+  if (!transcript.trim()) {
+    showToast('Nothing to share yet!', 'error');
+    return;
+  }
+  
+  let body = `Meeting Notes\n\n`;
+  body += `Duration: ~${summary?.duration || 'N/A'}\n`;
+  body += `Action Items: ${actions?.length || 0}\n\n`;
+  
+  body += `--- Action Items ---\n`;
+  if (actions && actions.length) {
+    body += actions.map(a => `[${a.done ? 'x' : ' '}] ${a.text}${a.assignee ? ` (@${a.assignee})` : ''}${a.deadline ? ` by ${a.deadline}` : ''}`).join('\n');
+  } else {
+    body += 'No action items extracted.';
+  }
+  
+  body += `\n\n--- Transcript ---\n${transcript}`;
+  body += `\n\n---\nSent from NoteNinja 🥷`;
+  
+  const subject = encodeURIComponent('NoteNinja Meeting Notes');
+  const encodedBody = encodeURIComponent(body);
+  window.location.href = `mailto:?subject=${subject}&body=${encodedBody}`;
 }
 
 function downloadFile(content, filename, mimeType) {
@@ -380,3 +608,18 @@ function downloadFile(content, filename, mimeType) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+// ─── Init ───
+document.addEventListener('DOMContentLoaded', () => {
+  initSpeechRecognition();
+  updateSpeechStatus();
+  renderHistory();
+});
+
+document.addEventListener('click', (e) => {
+  const wrapper = document.querySelector('.history-dropdown-wrapper');
+  if (wrapper && !wrapper.contains(e.target)) {
+    const dropdown = document.getElementById('history-dropdown');
+    if (dropdown) dropdown.classList.remove('open');
+  }
+});
