@@ -2,6 +2,33 @@
  * NoteNinja — Voice-to-Text Meeting Notes with AI Action Item Extraction
  */
 
+// ─── Toast Notification ───
+function showToast(message, type = 'success') {
+  const existing = document.querySelector('.noteninja-toast');
+  if (existing) existing.remove();
+  
+  const toast = document.createElement('div');
+  toast.className = 'noteninja-toast';
+  toast.style.cssText = `
+    position: fixed; top: 20px; right: 20px; z-index: 9999;
+    padding: 14px 24px; border-radius: 10px; font-size: 14px;
+    font-weight: 500; color: white; transform: translateX(120%);
+    transition: transform 0.3s ease, opacity 0.3s ease;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    background: ${type === 'error' ? '#ef4444' : type === 'warning' ? '#f59e0b' : '#10b981'};
+  `;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  
+  requestAnimationFrame(() => { toast.style.transform = 'translateX(0)'; });
+  
+  setTimeout(() => {
+    toast.style.transform = 'translateX(120%)';
+    toast.style.opacity = '0';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
 let isRecording = false;
 let recordingTimer = null;
 let recordingSeconds = 0;
@@ -85,7 +112,7 @@ function clearTranscript() {
 function extractActions() {
   const text = document.getElementById('transcript').value.trim();
   if (!text) {
-    alert('Enter a transcript first!');
+    showToast('Enter a transcript first!', 'error');
     return;
   }
 
@@ -338,7 +365,7 @@ function copyToClipboard() {
   const full = `Meeting Notes\n\n${text}\n\nAction Items:\n${actions}`;
   
   navigator.clipboard.writeText(full).then(() => {
-    alert('📋 Copied to clipboard!');
+    showToast('📋 Copied to clipboard!');
   });
 }
 
